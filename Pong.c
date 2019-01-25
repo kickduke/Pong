@@ -9,6 +9,9 @@
 SDL_Surface *surf_screen = NULL;
 SDL_Surface *surf_message1 = NULL;
 SDL_Surface *surf_background = NULL;
+SDL_Surface *surf_ball = NULL;
+SDL_Surface *surf_redbar = NULL;
+SDL_Surface *surf_greenbar = NULL;
 TTF_Font *ttf_font = NULL;
 //Mix_Music *music_bgm = NULL;
 Mix_Chunk *chunk_ping = NULL;
@@ -16,6 +19,29 @@ Mix_Chunk *chunk_pong = NULL;
 Mix_Chunk *chunk_bingo = NULL;
 SDL_Color color_font = {255,255,255};
 SDL_Event event;
+struct Ball
+{
+    int x;
+    int y;
+    int Ox;
+    int Oy;
+    int relx;
+    int rely;
+    int w;
+    int h;
+    short collision;
+};
+struct Bar
+{
+    short type;
+    int x;
+    int y;
+    int relx;
+    int rely;
+    int w;
+    int h;
+    short collision;
+};
 
 
 //函数声明
@@ -25,6 +51,9 @@ int load_ttf(char *a_filename, short a_font_size);
 int load_sound();
 void blit_surface(int a_x, int a_y, SDL_Surface *a_surf_source, SDL_Rect *a_rect_clip, SDL_Surface *a_surf_dest);
 void cleanup();
+void collision_detect(struct Ball *a_ball);
+void show_ball(struct Ball *a_ball);
+void show_bar(struct Bar *a_bar);
 
 
 int main(int argc, char *argv[]) 
@@ -33,6 +62,9 @@ int main(int argc, char *argv[])
     long delay_time = 0;
     int frame_count = 0;
     short quit = 0;
+    struct Ball ball = {100,100,100,100,3*BALL_SPEED,1*BALL_SPEED,30,32,0};
+    struct Bar redbar = {REDBAR,0,400,0,0,20,150,0};
+    struct Bar greenbar = {GREENBAR,SCREEN_W - 20 - 1,400,0,0,20,150,0};
 
     //初始化
     if(init("Pong") == -1) {
@@ -56,13 +88,43 @@ int main(int argc, char *argv[])
             if(event.type == SDL_KEYDOWN) {
                 switch(event.key.keysym.sym) {
                     case SDLK_UP:
+                        greenbar.rely = -1 * BAR_SPEED; 
                         break;
-                        ;
+                    case SDLK_DOWN:
+                        greenbar.rely = BAR_SPEED;
+                        break;
+                    case SDLK_w:
+                        redbar.rely = -1 * BAR_SPEED;
+                        break;
+                    case SDLK_s:
+                        redbar.rely = BAR_SPEED;
+                        break;
+                }
+            }
+            if(event.type == SDL_KEYUP) {
+                switch(event.key.keysym.sym) {
+                    case SDLK_UP:
+                        greenbar.rely = 0;
+                        break;
+                    case SDLK_DOWN:
+                        greenbar.rely = 0;
+                        break;
+                    case SDLK_w:
+                        redbar.rely = 0;
+                        break;
+                    case SDLK_s:
+                        redbar.rely = 0;
+                        break;
                 }
             }
         }
         //绘制surface
-        blit_surface(0, 0, surf_background, ,NULL, surf_screen);
+        blit_surface(0, 0, surf_background, NULL, surf_screen);
+        show_ball(&ball);
+        collision_detect(&ball);
+        //printf("x=%d y=%d relx=%d rely=%d\n",ball.x,ball.y,ball.relx,ball.rely);
+        show_bar(&redbar);
+        show_bar(&greenbar);
         surf_message1 = TTF_RenderUTF8_Solid(ttf_font, "HELLO,PONG", color_font);
         blit_surface(10, 5, surf_message1, NULL, surf_screen);
         //更新屏幕
@@ -105,7 +167,10 @@ int init(char *a_caption)
     SDL_WM_SetCaption(a_caption,NULL);
     //加载图片
     surf_background = load_image("/home/kqs/Project/Pong/pic/background.png",1);
-    if(surf_background == NULL) {
+    surf_ball = load_image("/home/kqs/Project/Pong/pic/ball.png",1);
+    surf_redbar = load_image("/home/kqs/Project/Pong/pic/redbar0.png",1);
+    surf_greenbar = load_image("/home/kqs/Project/Pong/pic/greenbar0.png",1);
+    if(surf_background == NULL || surf_ball == NULL) {
         printf("load pic failed...\n");
         return -1;
     }
@@ -176,4 +241,47 @@ void cleanup()
     Mix_FreeChunk(chunk_bingo);
     Mix_CloseAudio();
     SDL_Quit();
+}
+
+void collision_detect(struct Ball *a_ball)
+{
+    int sp_right = a_ball->x + a_ball->w - 1;
+    int sp_left = a_ball->x;
+    int sp_up = a_ball->y;
+    int sp_down = a_ball->y + a_ball->h - 1;
+
+    //碰到下边缘
+    if(sp_down >= SCREEN_H - 1) {
+        a_ball->rely *= -1;
+    }
+    //碰到上边缘
+    if(sp_up <= 0) {
+        a_ball->rely *= -1;
+    }
+    //碰到左边
+    if(sp_left <= 0) {
+        a_ball->relx *= -1;
+    }
+    //碰到右边
+    if(sp_right >= SCREEN_W - 1) {
+        a_ball->relx *= -1;
+    }
+}
+
+void show_ball(struct Ball *a_ball)
+{
+    blit_surface(a_ball->x, a_ball->y, surf_ball, NULL, surf_screen);
+    a_ball->x += a_ball->relx;
+    a_ball->y += a_ball->rely;
+}
+
+void show_bar(struct Bar *a_bar)
+{
+    if(a_bar->type == REDBAR) {
+        blit_surface(a_bar->x, a_bar->y, surf_redbar, NULL, surf_screen);
+    } 
+    if(a_bar->type == GREENBAR) {
+        blit_surface(a_bar->x, a_bar->y, surf_greenbar, NULL, surf_screen);
+    }
+    a_bar->y += a_bar->rely;
 }
