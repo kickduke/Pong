@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <math.h>
+#include <time.h>
 #include <SDL/SDL.h>
 #include <SDL/SDL_image.h>
 #include <SDL/SDL_ttf.h>
@@ -8,16 +10,22 @@
 //全局变量
 SDL_Surface *surf_screen = NULL;
 SDL_Surface *surf_message1 = NULL;
+SDL_Surface *surf_message2 = NULL;
+SDL_Surface *surf_message3 = NULL;
 SDL_Surface *surf_background = NULL;
 SDL_Surface *surf_ball = NULL;
 SDL_Surface *surf_redbar = NULL;
 SDL_Surface *surf_greenbar = NULL;
-TTF_Font *ttf_font = NULL;
+TTF_Font *ttf_score1 = NULL;
+TTF_Font *ttf_score2 = NULL;
+TTF_Font *ttf_msg = NULL;
 //Mix_Music *music_bgm = NULL;
 Mix_Chunk *chunk_ping = NULL;
 Mix_Chunk *chunk_pong = NULL;
 Mix_Chunk *chunk_bingo = NULL;
-SDL_Color color_font = {255,255,255};
+SDL_Color color_font0 = {255,255,255};
+SDL_Color color_font1 = {255,0,0};
+SDL_Color color_font2 = {0,255,0};
 SDL_Event event;
 struct Ball
 {
@@ -41,20 +49,21 @@ struct Bar
     int w;
     int h;
     short collision;
+    short score;
 };
-
 
 //函数声明
 int init(char *a_caption);
 SDL_Surface *load_image(char *a_filename, int a_is_sprite);
-int load_ttf(char *a_filename, short a_font_size);
+TTF_Font* load_ttf(char *a_filename, short a_font_size);
 int load_sound();
 void blit_surface(int a_x, int a_y, SDL_Surface *a_surf_source, SDL_Rect *a_rect_clip, SDL_Surface *a_surf_dest);
 void cleanup();
-void collision_detect(struct Ball *a_ball);
+void collision_detect(struct Ball *a_ball, struct Bar *a_redbar, struct Bar *a_greenbar);
 void show_ball(struct Ball *a_ball);
 void show_bar(struct Bar *a_bar);
-
+int rand_int(int a_max_int);
+int pause = 0;
 
 int main(int argc, char *argv[]) 
 {
@@ -62,15 +71,30 @@ int main(int argc, char *argv[])
     long delay_time = 0;
     int frame_count = 0;
     short quit = 0;
-    struct Ball ball = {100,100,100,100,3*BALL_SPEED,1*BALL_SPEED,30,32,0};
-    struct Bar redbar = {REDBAR,0,400,0,0,20,150,0};
-    struct Bar greenbar = {GREENBAR,SCREEN_W - 20 - 1,400,0,0,20,150,0};
+    struct Ball ball = {SCREEN_W/2 - 30/2,SCREEN_H/2 - 32/2,100,100,rand_int(3)*BALL_SPEED,rand_int(3)*BALL_SPEED,30,32,0};
+    struct Bar redbar = {REDBAR,0,400,0,0,20,150,0,0};
+    struct Bar greenbar = {GREENBAR,SCREEN_W - 20 - 1,400,0,0,20,150,0,0};
+    char result_msg[20] = "";
+    char str_score1[10] = ""; 
+    char str_score2[10] = ""; 
 
     //初始化
     if(init("Pong") == -1) {
         printf("init falied...\n");
         return -1;
     }
+
+RESTART:    //GAME初始化
+    quit = 0;
+    pause = 0;
+    redbar.score = 0;
+    greenbar.score = 0;
+    redbar.rely = 0;
+    greenbar.rely = 0;
+    ball.x = SCREEN_W/2 - 30/2;
+    ball.y = SCREEN_H/2 - 32/2;
+    ball.relx = rand_int(3)*BALL_SPEED;
+    ball.rely = rand_int(3)*BALL_SPEED;
 
     //主循环
     while(quit != 1) {
@@ -121,15 +145,43 @@ int main(int argc, char *argv[])
         //绘制surface
         blit_surface(0, 0, surf_background, NULL, surf_screen);
         show_ball(&ball);
-        collision_detect(&ball);
+        collision_detect(&ball, &redbar, &greenbar);
         //printf("x=%d y=%d relx=%d rely=%d\n",ball.x,ball.y,ball.relx,ball.rely);
         show_bar(&redbar);
         show_bar(&greenbar);
-        surf_message1 = TTF_RenderUTF8_Solid(ttf_font, "HELLO,PONG", color_font);
-        blit_surface(10, 5, surf_message1, NULL, surf_screen);
+        sprintf(str_score1,"%d", redbar.score);
+        sprintf(str_score2,"%d", greenbar.score);
+        surf_message1 = TTF_RenderUTF8_Solid(ttf_score1, str_score1, color_font1);
+        surf_message2 = TTF_RenderUTF8_Solid(ttf_score2, str_score2, color_font2);
+        blit_surface(100, 35, surf_message1, NULL, surf_screen);
+        blit_surface(SCREEN_W - 100 - 40, 35, surf_message2, NULL, surf_screen);
         //更新屏幕
         SDL_Flip(surf_screen);
         //控制帧率
+        if(redbar.score >= 10 || greenbar.score >= 10) {
+            pause = 1;
+            if(redbar.score > greenbar.score) {
+                sprintf(result_msg, "RED WINS!");
+            }
+            if(redbar.score < greenbar.score) {
+                sprintf(result_msg, "GREEN WINS!");
+            }
+            surf_message3 = TTF_RenderUTF8_Solid(ttf_msg, result_msg, color_font0);
+            blit_surface(SCREEN_W/2 - 50, SCREEN_H/2 - 20, surf_message3, NULL, surf_screen);
+            SDL_Flip(surf_screen);
+            while(pause == 1) {
+                SDL_WaitEvent(&event);
+                if(event.type == SDL_KEYUP) {
+                    if(event.key.keysym.sym == SDLK_RETURN) {
+                        goto RESTART;
+                    }
+                }
+                if(event.type == SDL_QUIT) {
+                    pause = 0;
+                    quit = 1;
+                }
+            }        
+        }
         delay_time = (long)(1000/FRAMERATE - (SDL_GetTicks() - start_time));
         if(delay_time > 0) {
             SDL_Delay(delay_time);
@@ -176,7 +228,10 @@ int init(char *a_caption)
     }
 
     //加载字体
-    if(load_ttf("/home/kqs/Project/Pong/font/Purisa.ttf",18) == -1) {
+    ttf_score1 = load_ttf("/home/kqs/Project/Pong/font/Purisa.ttf",50);
+    ttf_score2 = load_ttf("/home/kqs/Project/Pong/font/Purisa.ttf",50);
+    ttf_msg = load_ttf("/home/kqs/Project/Pong/font/Purisa.ttf",20);
+    if(ttf_score1 == NULL || ttf_score2 == NULL || ttf_msg == NULL) {
         printf("load ttf file failed...\n");
         return -1;
     }
@@ -201,13 +256,9 @@ SDL_Surface *load_image(char *a_filename, int a_is_sprite)
     return surf_image; 
 }
 
-int load_ttf(char *a_filename, short a_font_size) 
+TTF_Font* load_ttf(char *a_filename, short a_font_size) 
 {
-    ttf_font = TTF_OpenFont(a_filename, a_font_size);
-    if(ttf_font == NULL) {
-        return -1;
-    }
-    return 0;
+    return TTF_OpenFont(a_filename, a_font_size);
 }
 
 int load_sound()
@@ -232,8 +283,16 @@ void blit_surface(int a_x, int a_y, SDL_Surface *a_surf_source, SDL_Rect *a_rect
 
 void cleanup()
 {
-    //SDL_FreeSurface(sprite);
-    TTF_CloseFont(ttf_font);
+    SDL_FreeSurface(surf_screen);
+    SDL_FreeSurface(surf_message1);
+    SDL_FreeSurface(surf_message2);
+    SDL_FreeSurface(surf_background);
+    SDL_FreeSurface(surf_ball);
+    SDL_FreeSurface(surf_redbar);
+    SDL_FreeSurface(surf_greenbar);
+    TTF_CloseFont(ttf_score1);
+    TTF_CloseFont(ttf_score2);
+    TTF_CloseFont(ttf_msg);
     TTF_Quit();
     //Mix_FreeMusic(music_bgm);
     Mix_FreeChunk(chunk_ping);
@@ -243,28 +302,67 @@ void cleanup()
     SDL_Quit();
 }
 
-void collision_detect(struct Ball *a_ball)
+void collision_detect(struct Ball *a_ball, struct Bar *a_redbar, struct Bar *a_greenbar)
 {
-    int sp_right = a_ball->x + a_ball->w - 1;
-    int sp_left = a_ball->x;
-    int sp_up = a_ball->y;
-    int sp_down = a_ball->y + a_ball->h - 1;
+    int ball_right = a_ball->x + a_ball->w - 1;
+    int ball_left = a_ball->x;
+    int ball_up = a_ball->y;
+    int ball_down = a_ball->y + a_ball->h - 1;
+    int redbar_left = 0;
+    int redbar_right = a_redbar->w - 1;
+    int redbar_up = a_redbar->y;
+    int redbar_down = a_redbar->y + a_redbar->h - 1;
+    int greenbar_left = SCREEN_W - a_greenbar->w - 1;
+    int greenbar_right = SCREEN_W - 1;
+    int greenbar_up = a_greenbar->y;
+    int greenbar_down =a_greenbar->y + a_greenbar->h - 1;
+    //printf("redbar_l=%d redbar_r=%d redbar_u=%d redbar_d=%d\n",redbar_left,redbar_right,redbar_up,redbar_down);
+    //printf("greenbar_l=%d greenbar_r=%d greenbar_u=%d greenbar_d=%d\n"\
+    //        ,greenbar_left,greenbar_right,greenbar_up,greenbar_down);
 
     //碰到下边缘
-    if(sp_down >= SCREEN_H - 1) {
+    if(ball_down >= SCREEN_H - 1) {
+        a_ball->relx = (a_ball->relx > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
         a_ball->rely *= -1;
+        //printf("下边缘 ball.relx=%d ball.rely=%d\n",a_ball->relx,a_ball->rely);
+        Mix_PlayChannel(-1, chunk_ping, 0);
     }
     //碰到上边缘
-    if(sp_up <= 0) {
+    if(ball_up <= 0) {
         a_ball->rely *= -1;
+        a_ball->relx = (a_ball->relx > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
+        //printf("上边缘 ball.relx=%d ball.rely=%d\n",a_ball->relx,a_ball->rely);
+        Mix_PlayChannel(-1, chunk_ping, 0);
     }
     //碰到左边
-    if(sp_left <= 0) {
+    if(ball_left <= 0) {
+        a_greenbar->score++;
+        a_ball->rely = (a_ball->rely > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
         a_ball->relx *= -1;
+        //printf("左边 ball.relx=%d ball.rely=%d\n",a_ball->relx,a_ball->rely);
+        Mix_PlayChannel(-1, chunk_bingo, 0);
     }
     //碰到右边
-    if(sp_right >= SCREEN_W - 1) {
+    if(ball_right >= SCREEN_W - 1) {
+        a_redbar->score++;
+        a_ball->rely = (a_ball->rely > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
         a_ball->relx *= -1;
+        //printf("右边 ball.relx=%d ball.rely=%d\n",a_ball->relx,a_ball->rely);
+        Mix_PlayChannel(-1, chunk_bingo, 0);
+    }
+    //redbar碰撞判断
+    if(redbar_right >= ball_left && redbar_right <= ball_right \
+       && redbar_down >= ball_up && redbar_up <= ball_down) {
+        a_ball->rely = (a_ball->rely > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
+        a_ball->relx *= -1; 
+        Mix_PlayChannel(-1, chunk_pong, 0);
+    }
+    //greenbar碰撞判断
+    if(greenbar_left >= ball_left && greenbar_left <= ball_right \
+       && greenbar_down >= ball_up && greenbar_up <= ball_down) {
+        a_ball->rely = (a_ball->rely > 0 ? rand_int(3) * BALL_SPEED : (-1 * rand_int(3) * BALL_SPEED));
+        a_ball->relx *= -1;
+        Mix_PlayChannel(-1, chunk_pong, 0);
     }
 }
 
@@ -283,5 +381,15 @@ void show_bar(struct Bar *a_bar)
     if(a_bar->type == GREENBAR) {
         blit_surface(a_bar->x, a_bar->y, surf_greenbar, NULL, surf_screen);
     }
-    a_bar->y += a_bar->rely;
+        a_bar->y = (a_bar->y + a_bar->rely > 0 ? \
+                   (a_bar->y + a_bar->rely < SCREEN_H - 1 - a_bar->h ? a_bar->y + a_bar->rely : SCREEN_H - 1 - a_bar->h) : 0);
+}
+
+int rand_int(int a_max_int) 
+{
+    time_t now;
+    int randnum;
+    srand((unsigned)time(&now));
+    randnum = (rand() % a_max_int) + 1;
+    return randnum;
 }
